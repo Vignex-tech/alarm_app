@@ -71,7 +71,7 @@ public final class AlarmStore {
     public static synchronized int newId(Context c) {
         SharedPreferences p = prefs(c);
         int id = p.getInt(KEY_NEXT_ID, 1);
-        p.edit().putInt(KEY_NEXT_ID, id + 1).apply();
+        p.edit().putInt(KEY_NEXT_ID, id + 1).commit();
         return id;
     }
 
@@ -82,6 +82,6 @@ public final class AlarmStore {
         } catch (JSONException e) {
             return;
         }
-        prefs(c).edit().putString(KEY_LIST, arr.toString()).apply();
+        prefs(c).edit().putString(KEY_LIST, arr.toString()).commit();
     }
 }

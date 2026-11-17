@@ -11,11 +11,14 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.EditText;
 import android.widget.LinearLayout;
+import android.widget.ScrollView;
 import android.widget.Switch;
 import android.widget.TextView;
 import android.widget.TimePicker;
 import android.widget.Toast;
 
+import java.io.PrintWriter;
+import java.io.StringWriter;
 import java.util.Calendar;
 import java.util.Date;
 import java.util.List;
@@ -38,6 +41,8 @@ public class MainActivity extends Activity {
         emptyView = findViewById(R.id.empty);
         nextView = findViewById(R.id.next);
         findViewById(R.id.add).setOnClickListener(v -> showEditor(null));
+        installCrashHandler();
+        showPendingCrash();
 
         if (Build.VERSION.SDK_INT >= 33
                 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)
@@ -126,19 +131,23 @@ public class MainActivity extends Activity {
                 .setView(v)
                 .setNegativeButton(R.string.cancel, null)
                 .setPositiveButton(R.string.save, (dialog, which) -> {
-                    picker.clearFocus();
-                    Alarm a = existing != null ? existing : new Alarm();
-                    if (existing == null) a.id = AlarmStore.newId(this);
-                    a.hour = picker.getHour();
-                    a.minute = picker.getMinute();
-                    a.days = days[0];
-                    a.label = label.getText().toString().trim();
-                    a.enabled = true;
-                    AlarmStore.save(this, a);
-                    AlarmScheduler.schedule(this, a);
-                    Toast.makeText(this, ringsIn(a.nextTrigger(System.currentTimeMillis())),
-                            Toast.LENGTH_SHORT).show();
-                    refresh();
+                    try {
+                        picker.clearFocus();
+                        Alarm a = existing != null ? existing : new Alarm();
+                        if (existing == null) a.id = AlarmStore.newId(this);
+                        a.hour = picker.getHour();
+                        a.minute = picker.getMinute();
+                        a.days = days[0];
+                        a.label = label.getText().toString().trim();
+                        a.enabled = true;
+                        AlarmStore.save(this, a);
+                        AlarmScheduler.schedule(this, a);
+                        Toast.makeText(this, ringsIn(a.nextTrigger(System.currentTimeMillis())),
+                                Toast.LENGTH_SHORT).show();
+                        refresh();
+                    } catch (Throwable t) {
+                        showError(t);
+                    }
                 });
         if (existing != null) {
             b.setNeutralButton(R.string.delete, (dialog, which) -> {
@@ -148,6 +157,45 @@ public class MainActivity extends Activity {
             });
         }
         b.show();
+    }
+
+    private void installCrashHandler() {
+        final Thread.UncaughtExceptionHandler prev = Thread.getDefaultUncaughtExceptionHandler();
+        Thread.setDefaultUncaughtExceptionHandler((thread, throwable) -> {
+            getSharedPreferences("crash", MODE_PRIVATE).edit()
+                    .putString("trace", stackTrace(throwable)).commit();
+            if (prev != null) prev.uncaughtException(thread, throwable);
+        });
+    }
+
+    private void showPendingCrash() {
+        String trace = getSharedPreferences("crash", MODE_PRIVATE).getString("trace", null);
+        if (trace == null) return;
+        getSharedPreferences("crash", MODE_PRIVATE).edit().remove("trace").commit();
+        showText("The app crashed last time", trace);
+    }
+
+    private void showError(Throwable t) {
+        showText("Something went wrong", stackTrace(t));
+    }
+
+    private void showText(String title, String text) {
+        TextView tv = new TextView(this);
+        tv.setText(text);
+        tv.setTextSize(11);
+        tv.setTextIsSelectable(true);
+        tv.setPadding(32, 16, 32, 16);
+        ScrollView sv = new ScrollView(this);
+        sv.addView(tv);
+        new AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
+                .setTitle(title).setView(sv).setPositiveButton("OK", null).show();
+    }
+
+    private static String stackTrace(Throwable t) {
+        StringWriter sw = new StringWriter();
+        t.printStackTrace(new PrintWriter(sw));
+        String out = sw.toString();
+        return out.length() > 3000 ? out.substring(0, 3000) : out;
     }
 
     private String formatTime(int hour, int minute) {
